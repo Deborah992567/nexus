@@ -1,0 +1,19 @@
+[workspace]
+members = [
+  "apps/nexus-cli",
+  "apps/nexus-desktop",
+  "crates/nexus-core",
+  "crates/nexus-platform",
+  "crates/nexus-process",
+  "crates/nexus-resource",
+  "crates/nexus-storage",
+  "crates/nexus-network",
+  "crates/nexus-security",
+  "crates/nexus-diagnostics",
+  "crates/nexus-actions",
+  "crates/nexus-ai",
+  "crates/nexus-policy",
+  "crates/nexus-audit",
+  "crates/nexus-api",
+]
+resolver = "2"

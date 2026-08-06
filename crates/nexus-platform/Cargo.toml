@@ -1,0 +1,9 @@
+[package]
+name = "nexus-platform"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.71"
+nexus-core = { path = "../nexus-core" }
+libc = "0.2.126"

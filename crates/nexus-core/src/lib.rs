@@ -24,11 +24,19 @@ pub struct DiskSnapshot {
 #[derive(Debug, Clone)]
 pub struct ProcessSnapshot {
     pub pid: i32,
+    pub ppid: i32,
     pub name: String,
     pub user: String,
     pub status: String,
     pub cpu_percent: f64,
-    pub memory_bytes: u64,
+    pub rss_bytes: u64,
+    pub vmsize_bytes: u64,
+    pub runtime_seconds: u64,
+    pub start_time_ticks: u64,
+    pub threads: u32,
+    pub cmdline: Vec<String>,
+    pub exe_path: Option<String>,
+    pub fd_count: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -49,7 +57,7 @@ pub struct HealthReport {
 }
 
 impl HealthReport {
-    pub fn from_snapshot(snapshot: &Snapshot) -> Self {
+    pub fn from_snapshot(snapshot: &Snapshot, extra_issues: &[String]) -> Self {
         let mut score: i32 = 100;
         let mut issues = Vec::new();
 
@@ -70,7 +78,8 @@ impl HealthReport {
             }
         }
 
-        let available_ratio = snapshot.memory.available_bytes as f64 / snapshot.memory.total_bytes.max(1) as f64;
+        let available_ratio = snapshot.memory.available_bytes as f64
+            / snapshot.memory.total_bytes.max(1) as f64;
         if available_ratio < 0.10 {
             score -= 20;
             issues.push(format!(
@@ -84,6 +93,11 @@ impl HealthReport {
                 score -= 10;
                 issues.push(format!("Disk {} is {:.1}% full", disk.mount_point, disk.usage_percent));
             }
+        }
+
+        issues.extend(extra_issues.iter().cloned());
+        if !extra_issues.is_empty() {
+            score -= (extra_issues.len() as i32 * 4).min(24);
         }
 
         score = score.clamp(0, 100);
@@ -104,7 +118,11 @@ impl HealthReport {
         if self.issues.is_empty() {
             "No major issues detected.".to_string()
         } else {
-            self.issues.iter().map(|s| format!("- {s}")).collect::<Vec<_>>().join("\n")
+            self.issues
+                .iter()
+                .map(|s| format!("- {s}"))
+                .collect::<Vec<_>>()
+                .join("\n")
         }
     }
 }
@@ -123,7 +141,7 @@ mod tests {
             disks: vec![],
             processes: vec![],
         };
-        let report = HealthReport::from_snapshot(&snapshot);
+        let report = HealthReport::from_snapshot(&snapshot, &[]);
         assert_eq!(report.status, "degraded");
         assert!(report.issues.iter().any(|s| s.contains("CPU is high")));
     }
@@ -145,7 +163,7 @@ mod tests {
             }],
             processes: vec![],
         };
-        let report = HealthReport::from_snapshot(&snapshot);
+        let report = HealthReport::from_snapshot(&snapshot, &[]);
         assert!(report.issues.iter().any(|s| s.contains("Memory available is low")));
         assert!(report.issues.iter().any(|s| s.contains("Disk / is 95.0% full")));
     }

@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use nexus_core::{CpuSnapshot, DiskSnapshot, MemorySnapshot, ProcessSnapshot};
+use nexus_process::{anomalies_as_issues, detect_anomalies};
 use std::collections::HashMap;
 use std::ffi::CStr;
 use std::fs;
@@ -88,7 +89,14 @@ fn memory_snapshot() -> Result<MemorySnapshot> {
     let total = parse_kb(&map, "MemTotal")?;
     let available = map
         .get("MemAvailable")
-        .map(|v| v.split_whitespace().next().unwrap_or("0").parse::<u64>().unwrap_or(0) * 1024)
+        .map(|v| {
+            v.split_whitespace()
+                .next()
+                .unwrap_or("0")
+                .parse::<u64>()
+                .unwrap_or(0)
+                * 1024
+        })
         .unwrap_or(0);
     let used = total.saturating_sub(available);
     Ok(MemorySnapshot {
@@ -175,34 +183,79 @@ fn read_mounts() -> Result<Vec<(String, String)>> {
 
 fn uptime() -> Result<Duration> {
     let content = read_to_string("/proc/uptime")?;
-    let secs = content.split_whitespace().next().context("uptime")?.parse::<f64>()?;
+    let secs = content
+        .split_whitespace()
+        .next()
+        .context("uptime")?
+        .parse::<f64>()?;
     Ok(Duration::from_secs_f64(secs))
 }
 
 fn processes() -> Result<Vec<ProcessSnapshot>> {
-    let uptime_secs = uptime()?.as_secs_f64();
     let clk = unsafe { libc::sysconf(libc::_SC_CLK_TCK) } as f64;
-    let mut out = Vec::new();
-    for entry in fs::read_dir("/proc")? {
-        let entry = entry?;
-        let file_name = entry.file_name();
-        let pid: i32 = match file_name.to_string_lossy().parse() {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
-        if let Ok(p) = process_snapshot(pid, uptime_secs, clk) {
-            out.push(p);
+    let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as u64;
+    let first = sample_processes(clk, page_size)?;
+    thread::sleep(Duration::from_millis(120));
+    let second = sample_processes(clk, page_size)?;
+
+    let uptime_secs = uptime()?.as_secs_f64();
+    let first_map: HashMap<i32, ProcessSample> = first.into_iter().map(|p| (p.pid, p)).collect();
+    let second_map: HashMap<i32, ProcessSample> = second.into_iter().map(|p| (p.pid, p)).collect();
+
+    let mut processes = Vec::new();
+    for (pid, later) in second_map {
+        if let Some(earlier) = first_map.get(&pid) {
+            processes.push(to_snapshot(&later, Some(earlier), clk, uptime_secs, page_size));
         }
     }
-    out.sort_by(|a, b| {
+
+    let anomalies = anomalies_as_issues(&detect_anomalies(&processes));
+    if !anomalies.is_empty() {
+        eprintln!("process anomalies detected: {}", anomalies.len());
+    }
+
+    processes.sort_by(|a, b| {
         b.cpu_percent
             .partial_cmp(&a.cpu_percent)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
+    Ok(processes)
+}
+
+#[derive(Clone)]
+struct ProcessSample {
+    pid: i32,
+    ppid: i32,
+    name: String,
+    status: String,
+    uid: u32,
+    utime: f64,
+    stime: f64,
+    starttime: f64,
+    vmsize_bytes: u64,
+    rss_bytes: u64,
+    threads: u32,
+    cmdline: Vec<String>,
+    exe_path: Option<String>,
+    fd_count: Option<usize>,
+}
+
+fn sample_processes(clk: f64, page_size: u64) -> Result<Vec<ProcessSample>> {
+    let mut out = Vec::new();
+    for entry in fs::read_dir("/proc")? {
+        let entry = entry?;
+        let pid: i32 = match entry.file_name().to_string_lossy().parse() {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        if let Ok(sample) = process_sample(pid, clk, page_size) {
+            out.push(sample);
+        }
+    }
     Ok(out)
 }
 
-fn process_snapshot(pid: i32, uptime_secs: f64, clk: f64) -> Result<ProcessSnapshot> {
+fn process_sample(pid: i32, _clk: f64, page_size: u64) -> Result<ProcessSample> {
     let stat = read_to_string(&format!("/proc/{pid}/stat"))?;
     let status = read_to_string(&format!("/proc/{pid}/status")).unwrap_or_default();
     let comm_start = stat.find('(').context("stat comm start")?;
@@ -210,31 +263,97 @@ fn process_snapshot(pid: i32, uptime_secs: f64, clk: f64) -> Result<ProcessSnaps
     let name = stat[comm_start + 1..comm_end].to_string();
     let rest = stat[comm_end + 2..].split_whitespace().collect::<Vec<_>>();
     let state = rest.get(0).copied().unwrap_or("?").to_string();
+    let ppid: i32 = rest.get(1).and_then(|v| v.parse().ok()).unwrap_or(0);
     let utime: f64 = rest.get(11).and_then(|v| v.parse().ok()).unwrap_or(0.0);
     let stime: f64 = rest.get(12).and_then(|v| v.parse().ok()).unwrap_or(0.0);
+    let num_threads: u32 = rest.get(17).and_then(|v| v.parse().ok()).unwrap_or(0);
     let starttime: f64 = rest.get(19).and_then(|v| v.parse().ok()).unwrap_or(0.0);
+    let vmsize_bytes: u64 = rest.get(20).and_then(|v| v.parse().ok()).unwrap_or(0);
     let rss_pages: u64 = rest.get(21).and_then(|v| v.parse().ok()).unwrap_or(0);
-    let memory_bytes = rss_pages.saturating_mul(page_size());
-    let seconds = uptime_secs - starttime / clk;
-    let cpu_percent = if seconds > 0.0 {
-        ((utime + stime) / clk) / seconds * 100.0
-    } else {
-        0.0
-    };
+    let rss_bytes = rss_pages.saturating_mul(page_size);
     let uid = extract_uid(&status).unwrap_or(0);
-    let user = user_from_uid(uid).unwrap_or_else(|| uid.to_string());
-    Ok(ProcessSnapshot {
+    let cmdline = read_cmdline(pid).unwrap_or_default();
+    let exe_path = read_exe_path(pid);
+    let fd_count = count_fds(pid);
+
+    Ok(ProcessSample {
         pid,
+        ppid,
         name,
-        user,
         status: state,
-        cpu_percent: cpu_percent.clamp(0.0, 10000.0),
-        memory_bytes,
+        uid,
+        utime,
+        stime,
+        starttime,
+        vmsize_bytes,
+        rss_bytes,
+        threads: num_threads,
+        cmdline,
+        exe_path,
+        fd_count,
     })
 }
 
-fn page_size() -> u64 {
-    unsafe { libc::sysconf(libc::_SC_PAGESIZE) as u64 }
+fn to_snapshot(
+    later: &ProcessSample,
+    earlier: Option<&ProcessSample>,
+    clk: f64,
+    uptime_secs: f64,
+    _page_size: u64,
+) -> ProcessSnapshot {
+    let cpu_percent = if let Some(earlier) = earlier {
+        let later_ticks = later.utime + later.stime;
+        let earlier_ticks = earlier.utime + earlier.stime;
+        let delta_ticks = (later_ticks - earlier_ticks).max(0.0);
+        let elapsed_seconds = 0.120_f64;
+        if elapsed_seconds > 0.0 {
+            (delta_ticks / clk) / elapsed_seconds * 100.0 / num_cpus() as f64
+        } else {
+            0.0
+        }
+    } else {
+        0.0
+    };
+
+    let runtime_seconds = (uptime_secs - later.starttime / clk).max(0.0) as u64;
+    let user = user_from_uid(later.uid).unwrap_or_else(|| later.uid.to_string());
+
+    ProcessSnapshot {
+        pid: later.pid,
+        ppid: later.ppid,
+        name: later.name.clone(),
+        user,
+        status: later.status.clone(),
+        cpu_percent: cpu_percent.clamp(0.0, 10000.0),
+        rss_bytes: later.rss_bytes,
+        vmsize_bytes: later.vmsize_bytes,
+        runtime_seconds,
+        start_time_ticks: later.starttime as u64,
+        threads: later.threads,
+        cmdline: later.cmdline.clone(),
+        exe_path: later.exe_path.clone(),
+        fd_count: later.fd_count,
+    }
+}
+
+fn read_cmdline(pid: i32) -> Result<Vec<String>> {
+    let path = format!("/proc/{pid}/cmdline");
+    let bytes = fs::read(path)?;
+    Ok(bytes
+        .split(|b| *b == 0)
+        .filter(|chunk| !chunk.is_empty())
+        .map(|chunk| String::from_utf8_lossy(chunk).to_string())
+        .collect())
+}
+
+fn read_exe_path(pid: i32) -> Option<String> {
+    fs::read_link(format!("/proc/{pid}/exe"))
+        .ok()
+        .map(|p| p.to_string_lossy().to_string())
+}
+
+fn count_fds(pid: i32) -> Option<usize> {
+    fs::read_dir(format!("/proc/{pid}/fd")).ok().map(|iter| iter.count())
 }
 
 fn extract_uid(status: &str) -> Option<u32> {

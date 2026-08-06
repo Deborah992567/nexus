@@ -1,4 +1,3 @@
-
 use anyhow::Result;
 use nexus_core::Snapshot;
 use nexus_platform::SystemPlatform;

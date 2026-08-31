@@ -5,6 +5,7 @@ use nexus_process::{anomalies_as_issues, build_tree, detect_anomalies, format_by
 use nexus_resource::collect_snapshot;
 use nexus_storage::{analyze, format_bytes as storage_format_bytes};
 use nexus_network::{bandwidth, format_rate, network_interfaces};
+use nexus_diagnostics::analyze as analyze_diagnostics;
 use std::env;
 use std::path::Path;
 use std::time::Duration;
@@ -43,12 +44,16 @@ fn main() -> Result<()> {
         Some("network") => {
             print_network();
         }
+        Some("diagnostics") => {
+            let report = analyze_diagnostics(&snapshot, None);
+            print_diagnostics(&report);
+        }
         Some(cmd) => {
-            eprintln!("unknown command: {cmd} (use status | health | processes | storage | network)");
+            eprintln!("unknown command: {cmd} (use status | health | processes | storage | network | diagnostics)");
             std::process::exit(2);
         }
         None => {
-            eprintln!("usage: nexus <status|health|processes|storage|network>");
+            eprintln!("usage: nexus <status|health|processes|storage|network|diagnostics>");
             std::process::exit(2);
         }
     }
@@ -267,6 +272,27 @@ fn print_network() {
             eprintln!("error enumerating network interfaces: {e}");
             std::process::exit(1);
         }
+    }
+}
+
+fn print_diagnostics(report: &nexus_diagnostics::DiagnosticReport) {
+    use nexus_diagnostics::Severity;
+    println!("DIAGNOSTICS — {}", report.platform);
+    println!("Overall: {}", report.overall.as_str());
+    println!();
+    for finding in &report.findings {
+        let marker = match finding.severity {
+            Severity::Critical => "!!",
+            Severity::Warning => "! ",
+            Severity::Info => "ok",
+        };
+        println!("[{marker}] {}: {}", finding.severity.as_str(), finding.title);
+        println!("      {}", finding.explanation);
+        for ev in &finding.evidence {
+            println!("      evidence: {ev}");
+        }
+        println!("      next: {}", finding.suggested_action);
+        println!();
     }
 }
 

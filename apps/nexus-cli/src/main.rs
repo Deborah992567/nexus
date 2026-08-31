@@ -4,8 +4,10 @@ use nexus_platform::detect_platform;
 use nexus_process::{anomalies_as_issues, build_tree, detect_anomalies, format_bytes, sort_by_cpu, ProcessNode};
 use nexus_resource::collect_snapshot;
 use nexus_storage::{analyze, format_bytes as storage_format_bytes};
+use nexus_network::{bandwidth, format_rate, network_interfaces};
 use std::env;
 use std::path::Path;
+use std::time::Duration;
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -38,12 +40,15 @@ fn main() -> Result<()> {
             let root = args.get(1).cloned().unwrap_or_else(|| home_scan_root());
             print_storage(&root);
         }
+        Some("network") => {
+            print_network();
+        }
         Some(cmd) => {
-            eprintln!("unknown command: {cmd} (use status | health | processes | storage)");
+            eprintln!("unknown command: {cmd} (use status | health | processes | storage | network)");
             std::process::exit(2);
         }
         None => {
-            eprintln!("usage: nexus <status|health|processes|storage>");
+            eprintln!("usage: nexus <status|health|processes|storage|network>");
             std::process::exit(2);
         }
     }
@@ -205,6 +210,61 @@ fn print_storage(root: &str) {
         }
         None => {
             eprintln!("error: could not scan {root}");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn print_network() {
+    use nexus_network::NetworkError;
+
+    match network_interfaces() {
+        Ok(interfaces) => {
+            println!("NETWORK INTERFACES");
+            println!("------------------");
+            println!("  {:<12} {:>12} {:>12}", "interface", "in (cum)", "out (cum)");
+            for iface in &interfaces {
+                println!(
+                    "  {:<12} {:>12} {:>12}",
+                    iface.name,
+                    format_bytes(iface.cum_in_bytes as u64),
+                    format_bytes(iface.cum_out_bytes as u64)
+                );
+            }
+            println!("{} interface(s) enumerated.", interfaces.len());
+            println!();
+
+            println!("LIVE BANDWIDTH (2s sample)");
+            println!("--------------------------");
+            let samples = bandwidth(&mut network_interfaces, Duration::from_secs(2));
+            match samples {
+                Ok(samples) => {
+                    if samples.is_empty() {
+                        println!("  (no consistent interfaces observed)");
+                    } else {
+                        println!("  {:<12} {:>12} {:>12}", "interface", "in", "out");
+                        for s in &samples {
+                            println!(
+                                "  {:<12} {:>12} {:>12}",
+                                s.interface,
+                                format_rate(s.bytes_in_per_sec),
+                                format_rate(s.bytes_out_per_sec)
+                            );
+                        }
+                    }
+                }
+                Err(NetworkError::PlatformLimited(msg)) => {
+                    println!("  PLATFORM-LIMITED: {msg}");
+                }
+                Err(e) => {
+                    println!("  error sampling bandwidth: {e}");
+                }
+            }
+            println!();
+            println!("Connection-to-process mapping and listening-port enumeration are PLATFORM-LIMITED on macOS at this stage (not faked).");
+        }
+        Err(e) => {
+            eprintln!("error enumerating network interfaces: {e}");
             std::process::exit(1);
         }
     }

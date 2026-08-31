@@ -48,6 +48,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "nexus-core",
+ "nexus-network",
  "nexus-platform",
  "nexus-process",
  "nexus-resource",
@@ -74,6 +75,7 @@ name = "nexus-network"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "thiserror",
 ]
 
 [[package]]

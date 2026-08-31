@@ -74,11 +74,11 @@ pub fn classify(action: &str) -> Result<RiskLevel, PolicyError> {
         // Minor, reversible cleanups.
         "clean_temp_file" | "clear_cache_entry" => RiskLevel::LowRisk,
 
-        // Suspending an application process.
+        // Suspending (pausing) an application process.
         "suspend_process" => RiskLevel::MediumRisk,
 
         // Terminating a process, stopping a service, changing a setting.
-        "kill_process" | "stop_service" | "change_setting" => RiskLevel::HighRisk,
+        "stop_process" | "kill_process" | "stop_service" | "change_setting" => RiskLevel::HighRisk,
 
         // Destructive / security-sensitive.
         "delete_file" | "delete_directory" | "modify_firewall" | "change_permissions" | "change_network_config" | "change_security_setting"

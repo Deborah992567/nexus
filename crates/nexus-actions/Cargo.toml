@@ -5,4 +5,8 @@ edition = "2021"
 
 [dependencies]
 libc = "0.2.126"
+thiserror = "=1.0.16"
+nexus-audit = { path = "../nexus-audit" }
+nexus-policy = { path = "../nexus-policy" }
+nexus-core = { path = "../nexus-core" }
 

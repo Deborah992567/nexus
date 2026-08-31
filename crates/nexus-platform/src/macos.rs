@@ -46,7 +46,7 @@ fn memory_snapshot() -> Result<MemorySnapshot> {
         if libc::sysctl(mib.as_mut_ptr(), 2, &mut total as *mut _ as *mut _, &mut size, std::ptr::null_mut(), 0) != 0 {
             bail!("sysctl hw.memsize failed");
         }
-        let mut vm = libc::vm_statistics64_data_t::default();
+        let mut vm: libc::vm_statistics64_data_t = std::mem::zeroed();
         let mut count = libc::HOST_VM_INFO64_COUNT;
         let ret = libc::host_statistics64(libc::mach_host_self(), libc::HOST_VM_INFO64, &mut vm as *mut _ as *mut _, &mut count);
         if ret != libc::KERN_SUCCESS {

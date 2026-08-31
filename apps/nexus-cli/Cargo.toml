@@ -9,3 +9,4 @@ nexus-core = { path = "../../crates/nexus-core" }
 nexus-platform = { path = "../../crates/nexus-platform" }
 nexus-process = { path = "../../crates/nexus-process" }
 nexus-resource = { path = "../../crates/nexus-resource" }
+nexus-storage = { path = "../../crates/nexus-storage" }

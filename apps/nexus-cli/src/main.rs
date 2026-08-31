@@ -3,7 +3,9 @@ use nexus_core::{HealthReport, Snapshot};
 use nexus_platform::detect_platform;
 use nexus_process::{anomalies_as_issues, build_tree, detect_anomalies, format_bytes, sort_by_cpu, ProcessNode};
 use nexus_resource::collect_snapshot;
+use nexus_storage::{analyze, format_bytes as storage_format_bytes};
 use std::env;
+use std::path::Path;
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -32,12 +34,16 @@ fn main() -> Result<()> {
                 std::process::exit(2);
             }
         },
+        Some("storage") => {
+            let root = args.get(1).cloned().unwrap_or_else(|| home_scan_root());
+            print_storage(&root);
+        }
         Some(cmd) => {
-            eprintln!("unknown command: {cmd} (use status | health | processes)");
+            eprintln!("unknown command: {cmd} (use status | health | processes | storage)");
             std::process::exit(2);
         }
         None => {
-            eprintln!("usage: nexus <status|health|processes>");
+            eprintln!("usage: nexus <status|health|processes|storage>");
             std::process::exit(2);
         }
     }
@@ -151,6 +157,57 @@ fn format_megabytes(bytes: u64) -> String {
 
 fn esc(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn home_scan_root() -> String {
+    std::env::var("HOME").unwrap_or_else(|_| "/Users".to_string())
+}
+
+fn print_storage(root: &str) {
+    let root_path = Path::new(root);
+    if !root_path.is_dir() {
+        eprintln!("error: {root} is not a readable directory");
+        std::process::exit(1);
+    }
+    match analyze(root_path) {
+        Some(analysis) => {
+            println!("STORAGE ANALYSIS — {}", root_path.display());
+            println!("Total scanned: {}", storage_format_bytes(analysis.total_bytes));
+            println!("Entries scanned: {}", analysis.entries_scanned);
+            if analysis.entries_known > analysis.entries_scanned {
+                println!("(scan truncated at {} entries)", nexus_storage::MAX_ENTRIES_PER_SCAN);
+            }
+            println!();
+
+            println!("SAFE-TO-RECLAIM (read-only report; nothing deleted)");
+            println!("---------------------------------------");
+            for (category, size) in &analysis.reclaimable_by_category {
+                println!("  {:<18} {:>12}", category.as_str(), storage_format_bytes(*size));
+            }
+            println!();
+
+            if !analysis.large_files.is_empty() {
+                println!("LARGE FILES");
+                println!("----------");
+                for item in analysis.large_files.iter().take(15) {
+                    let marker = if item.safe_to_reclaim { "reclaimable" } else { "keep" };
+                    println!("  {:>10}  [{:<11}] {}", storage_format_bytes(item.size_bytes), marker, item.path.display());
+                }
+                println!();
+            }
+
+            if analysis.reclaimable_bytes > 0 {
+                println!("You have approximately {} that may be safely reclaimable across the scanned caches, temporary files, and build artifacts.", storage_format_bytes(analysis.reclaimable_bytes));
+            } else {
+                println!("No obviously reclaimable space was found in the scanned area.");
+            }
+            println!("NEXUS is read-only at this stage and will not delete anything. Cleanup actions arrive in a later phase.");
+        }
+        None => {
+            eprintln!("error: could not scan {root}");
+            std::process::exit(1);
+        }
+    }
 }
 
 fn snapshot_to_json(snapshot: &Snapshot) -> String {

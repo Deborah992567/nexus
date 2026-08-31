@@ -85,6 +85,10 @@ pub struct StorageAnalysis {
     pub total_bytes: u64,
     pub large_files: Vec<StorageItem>,
     pub by_category: BTreeMap<StorageCategory, u64>,
+    /// Total bytes judged safe to reclaim, broken down by category.
+    pub reclaimable_by_category: BTreeMap<StorageCategory, u64>,
+    /// Total bytes judged safe to reclaim across all categories.
+    pub reclaimable_bytes: u64,
     /// Count of entries actually visited (bounded by [`MAX_ENTRIES_PER_SCAN`]).
     pub entries_scanned: usize,
     /// Total count known to exist, which may exceed `entries_scanned` when
@@ -98,6 +102,8 @@ impl Default for StorageAnalysis {
             total_bytes: 0,
             large_files: Vec::new(),
             by_category: BTreeMap::new(),
+            reclaimable_by_category: BTreeMap::new(),
+            reclaimable_bytes: 0,
             entries_scanned: 0,
             entries_known: 0,
         }
@@ -281,6 +287,11 @@ fn walk(
         analysis.total_bytes += size;
         *analysis.by_category.entry(category).or_insert(0) += size;
 
+        if item.safe_to_reclaim {
+            analysis.reclaimable_bytes += size;
+            *analysis.reclaimable_by_category.entry(category).or_insert(0) += size;
+        }
+
         if size >= LARGE_FILE_THRESHOLD {
             analysis.large_files.push(item);
         }
@@ -365,6 +376,10 @@ mod tests {
                 assert!(analysis.large_files[0].path.ends_with("big.cache"));
                 let cache_total = analysis.by_category.get(&StorageCategory::Cache).copied().unwrap_or(0);
                 assert_eq!(cache_total, 100 * 1024 * 1024 + 1000);
+                // Cache files are reclaimable; the log file is not.
+                assert_eq!(analysis.reclaimable_bytes, 100 * 1024 * 1024 + 1000);
+                let reclaimable_cache = analysis.reclaimable_by_category.get(&StorageCategory::Cache).copied().unwrap_or(0);
+                assert_eq!(reclaimable_cache, 100 * 1024 * 1024 + 1000);
             }
             None => panic!("analyze returned None"),
         }

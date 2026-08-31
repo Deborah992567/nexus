@@ -6,6 +6,7 @@ use nexus_resource::collect_snapshot;
 use nexus_storage::{analyze, format_bytes as storage_format_bytes};
 use nexus_network::{bandwidth, format_rate, network_interfaces};
 use nexus_diagnostics::analyze as analyze_diagnostics;
+use nexus_security::assess_all;
 use std::env;
 use std::path::Path;
 use std::time::Duration;
@@ -48,12 +49,16 @@ fn main() -> Result<()> {
             let report = analyze_diagnostics(&snapshot, None);
             print_diagnostics(&report);
         }
+        Some("security") => {
+            let report = assess_all(&snapshot.processes);
+            print_security(&report);
+        }
         Some(cmd) => {
-            eprintln!("unknown command: {cmd} (use status | health | processes | storage | network | diagnostics)");
+            eprintln!("unknown command: {cmd} (use status | health | processes | storage | network | diagnostics | security)");
             std::process::exit(2);
         }
         None => {
-            eprintln!("usage: nexus <status|health|processes|storage|network|diagnostics>");
+            eprintln!("usage: nexus <status|health|processes|storage|network|diagnostics|security>");
             std::process::exit(2);
         }
     }
@@ -294,6 +299,38 @@ fn print_diagnostics(report: &nexus_diagnostics::DiagnosticReport) {
         println!("      next: {}", finding.suggested_action);
         println!();
     }
+}
+
+fn print_security(report: &nexus_security::SecurityReport) {
+    use nexus_security::RiskLevel;
+
+    println!("SECURITY ASSESSMENT");
+    println!("-------------------");
+    println!(
+        "Assessed {} process(es): {} low, {} medium, {} high.",
+        report.assessed, report.low, report.medium, report.high
+    );
+
+    let flagged: Vec<_> = report.assessments.iter().filter(|a| !a.signals.is_empty()).collect();
+    if flagged.is_empty() {
+        println!("No suspicious signals detected in the sampled processes.");
+    } else {
+        println!();
+        for a in flagged {
+            let marker = match a.risk {
+                RiskLevel::High => "!!",
+                RiskLevel::Medium => "! ",
+                RiskLevel::Low => "  ",
+            };
+            println!("[{marker}] {} (pid {}) — {} risk, score {:.2}", a.name, a.pid, a.risk.as_str(), a.score);
+            for s in &a.signals {
+                println!("     - [{}] conf {:.2}: {}", s.kind.as_str(), s.confidence, s.explanation);
+            }
+            println!();
+        }
+    }
+
+    println!("NOTE: These are evidence-based signals from process telemetry. NEXUS does not claim any process is malware without real evidence. Deeper monitoring (privilege escalation, file-access, syscalls) requires elevated privileges and is PLATFORM-LIMITED at this stage.");
 }
 
 fn snapshot_to_json(snapshot: &Snapshot) -> String {

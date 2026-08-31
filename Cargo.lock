@@ -53,6 +53,7 @@ dependencies = [
  "nexus-platform",
  "nexus-process",
  "nexus-resource",
+ "nexus-security",
  "nexus-storage",
 ]
 
@@ -121,6 +122,8 @@ name = "nexus-security"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "nexus-core",
+ "thiserror",
 ]
 
 [[package]]

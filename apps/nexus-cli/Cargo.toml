@@ -12,3 +12,4 @@ nexus-resource = { path = "../../crates/nexus-resource" }
 nexus-storage = { path = "../../crates/nexus-storage" }
 nexus-network = { path = "../../crates/nexus-network" }
 nexus-diagnostics = { path = "../../crates/nexus-diagnostics" }
+nexus-security = { path = "../../crates/nexus-security" }

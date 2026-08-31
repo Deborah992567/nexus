@@ -7,6 +7,8 @@ use nexus_storage::{analyze, format_bytes as storage_format_bytes};
 use nexus_network::{bandwidth, format_rate, network_interfaces};
 use nexus_diagnostics::analyze as analyze_diagnostics;
 use nexus_security::assess_all;
+use nexus_actions::ActionEngine;
+use nexus_audit::AuditLog;
 use std::env;
 use std::path::Path;
 use std::time::Duration;
@@ -53,12 +55,18 @@ fn main() -> Result<()> {
             let report = assess_all(&snapshot.processes);
             print_security(&report);
         }
+        Some("audit") => {
+            print_audit();
+        }
+        Some("act") => {
+            act(&args[1..]);
+        }
         Some(cmd) => {
-            eprintln!("unknown command: {cmd} (use status | health | processes | storage | network | diagnostics | security)");
+            eprintln!("unknown command: {cmd} (use status | health | processes | storage | network | diagnostics | security | audit | act)");
             std::process::exit(2);
         }
         None => {
-            eprintln!("usage: nexus <status|health|processes|storage|network|diagnostics|security>");
+            eprintln!("usage: nexus <status|health|processes|storage|network|diagnostics|security|audit|act>");
             std::process::exit(2);
         }
     }
@@ -331,6 +339,136 @@ fn print_security(report: &nexus_security::SecurityReport) {
     }
 
     println!("NOTE: These are evidence-based signals from process telemetry. NEXUS does not claim any process is malware without real evidence. Deeper monitoring (privilege escalation, file-access, syscalls) requires elevated privileges and is PLATFORM-LIMITED at this stage.");
+}
+
+fn print_audit() {
+    let path = AuditLog::default_path();
+    println!("AUDIT LOG — {}", path.display());
+    println!("------------------");
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(_) => {
+            println!("No audit file found yet. Actions performed with 'nexus act' will appear here.");
+            return;
+        }
+    };
+    // The audit file is append-only JSONL. Print each record, numbered.
+    let mut count = 0usize;
+    for line in content.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        count += 1;
+        println!("#{count}: {line}");
+    }
+    if count == 0 {
+        println!("No actions recorded yet. Actions performed with 'nexus act' will appear here.");
+    }
+}
+
+fn persistent_engine() -> ActionEngine {
+    // The CLI runner is authorized to change system state only when an
+    // action is explicitly confirmed (see act()). Reads/writes the default
+    // local audit log.
+    let log = AuditLog::at(AuditLog::default_path()).unwrap_or_else(|_| AuditLog::memory());
+    ActionEngine::new(log, true)
+}
+
+fn resolve_action(action: &str, target: &str) -> Option<nexus_actions::Action> {
+    match action {
+        "stop" => target.parse::<i32>().ok().map(|pid| nexus_actions::Action::StopProcess { pid }),
+        "kill" => target.parse::<i32>().ok().map(|pid| nexus_actions::Action::KillProcess { pid }),
+        "delete" => Some(nexus_actions::Action::DeleteFile { path: target.to_string() }),
+        _ => None,
+    }
+}
+
+fn act(args: &[String]) {
+    let command = match args.first() {
+        Some(v) => v.as_str(),
+        None => {
+            eprintln!("usage: nexus act <plan|stop|kill|delete> <target> [--yes]");
+            std::process::exit(2);
+        }
+    };
+    let confirmed = args.iter().any(|a| a == "--yes");
+
+    match command {
+        "plan" => {
+            let action_name = args.get(1).map(String::as_str).unwrap_or("");
+            let target_val = args.get(2).map(String::as_str).unwrap_or("");
+            let action = match resolve_action(action_name, target_val) {
+                Some(a) => a,
+                None => {
+                    eprintln!("unknown/unsupported action for plan. Use e.g. 'nexus act plan stop 123'.");
+                    std::process::exit(2);
+                }
+            };
+            let engine = persistent_engine();
+            match engine.plan(&action) {
+                Ok(plan) => {
+                    println!("ACTION PLAN");
+                    println!("-----------");
+                    println!("action:     {}", plan.action.describe());
+                    println!("risk:       {}", plan.risk.as_str());
+                    println!("reversible: {}", plan.reversible);
+                    println!("confirm:    {}", if plan.confirmation_required { "REQUIRED" } else { "not required" });
+                    println!("{}", plan.permission.reason);
+                    println!();
+                    println!("To execute (a real, verified system change):");
+                    println!("  nexus act {action_name} {target_val} --yes");
+                }
+                Err(e) => {
+                    eprintln!("cannot plan action: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        _ => {
+            let action = match args.get(1).and_then(|a| {
+                let name = command;
+                let target = a.as_str();
+                resolve_action(name, target)
+            }) {
+                Some(a) => a,
+                None => {
+                    eprintln!("unknown action '{command}' or missing target");
+                    std::process::exit(2);
+                }
+            };
+            let mut engine = persistent_engine();
+            let plan = match engine.plan(&action) {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("cannot plan: {e}");
+                    std::process::exit(1);
+                }
+            };
+            if !confirmed {
+                eprintln!(
+                    "Refusing to execute without --yes. This is a {}-risk, reversible={} action.",
+                    plan.risk.as_str(),
+                    plan.reversible
+                );
+                eprintln!("Review the plan first: nexus act plan {command} {}", args.get(1).map(String::as_str).unwrap_or(""));
+                std::process::exit(2);
+            }
+            match engine.execute(&plan, true, "User requested via CLI") {
+                Ok(detail) if detail.success => {
+                    println!("SUCCESS: {}", detail.message);
+                    println!("(recorded in audit log)");
+                }
+                Ok(detail) => {
+                    eprintln!("NOT EXECUTED: {}", detail.message);
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("ACTION FAILED: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
 }
 
 fn snapshot_to_json(snapshot: &Snapshot) -> String {

@@ -70,6 +70,7 @@ dependencies = [
  "nexus-actions",
  "nexus-ai",
  "nexus-audit",
+ "nexus-config",
  "nexus-core",
  "nexus-diagnostics",
  "nexus-network",

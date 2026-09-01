@@ -70,18 +70,81 @@ fn main() -> Result<()> {
         Some("sandbox") => {
             sandbox(args.get(1).map(String::as_str));
         }
+        Some("mode") => {
+            mode_cmd(args.get(1).map(String::as_str));
+        }
+        Some("config") => {
+            config_cmd();
+        }
         Some(cmd) => {
-            eprintln!("unknown command: {cmd} (use status | health | processes | storage | network | diagnostics | security | audit | act | advice | sandbox)");
+            eprintln!("unknown command: {cmd} (use status | health | processes | storage | network | diagnostics | security | audit | act | advice | sandbox | mode | config)");
             std::process::exit(2);
         }
         None => {
-            eprintln!("usage: nexus <status|health|processes|storage|network|diagnostics|security|audit|act|advice|sandbox>");
-            std::process::exit(2);
+            match nexus_config::ConfigStore::load().mode() {
+                nexus_config::Mode::Simple => simple_overview(&snapshot),
+                nexus_config::Mode::Developer => {
+                    print_usage();
+                }
+            }
         }
     }
 
     Ok(())
 }
+
+/// Developer-mode: show the full command reference.
+fn print_usage() {
+    println!("NEXUS — system observability (current mode: developer)");
+    println!();
+    println!("commands:");
+    println!("  status        JSON snapshot (CPU/mem/disk/processes)");
+    println!("  health        summary + issues");
+    println!("  processes     top processes (list | inspect <pid> | tree)");
+    println!("  storage       storage analysis of a path (default: home)");
+    println!("  network       interface counters + live bandwidth");
+    println!("  diagnostics   correlated diagnosis of the current snapshot");
+    println!("  security      evidence-based process risk assessment");
+    println!("  advice        advisory recommendations with evidence");
+    println!("  audit         the persisted action journal");
+    println!("  act           plan/execute a policy-checked action");
+    println!("  sandbox       OS-level sandboxing status + demo");
+    println!("  mode          show or change UI mode (simple | developer)");
+    println!("  config        show persisted configuration");
+    println!();
+    println!("run 'nexus <command> --help' style hints; try: nexus mode simple");
+}
+
+/// Simple-mode: a friendly plain-language overview with no raw internals.
+fn simple_overview(snapshot: &Snapshot) {
+    use nexus_process::format_bytes;
+    println!("NEXUS (Simple Mode)");
+    println!("--------------------");
+    let anomalies = detect_anomalies(&snapshot.processes);
+    let health = HealthReport::from_snapshot(snapshot, &anomalies_as_issues(&anomalies));
+    println!("Overall status: {}", health.status);
+    println!("Health score:   {}/100", health.score);
+    println!("CPU usage:      {:.1}%", snapshot.cpu.usage_percent);
+    println!(
+        "Memory:         {} used of {}",
+        format_bytes(snapshot.memory.used_bytes),
+        format_bytes(snapshot.memory.total_bytes)
+    );
+    println!("Processes:      {}", snapshot.processes.len());
+    if !health.issues.is_empty() {
+        println!();
+        println!("Things to look at:");
+        for issue in &health.issues {
+            println!("  - {issue}");
+        }
+    } else {
+        println!();
+        println!("Nothing looks out of the ordinary right now.");
+    }
+    println!();
+    println!("For full control, switch to Developer mode: nexus mode developer");
+}
+
 
 fn parse_pid(value: Option<&String>) -> Result<i32> {
     value
@@ -473,6 +536,50 @@ fn sandbox(sub: Option<&str>) {
             std::process::exit(2);
         }
     }
+}
+
+fn mode_cmd(mode: Option<&str>) {
+    use nexus_config::{ConfigStore, Mode};
+    let mut store = ConfigStore::load();
+    match mode {
+        None => {
+            println!("NEXUS UI MODE");
+            println!("-------------");
+            println!("current:     {}", store.mode().as_str());
+            println!("confirmation: {}", store.config().confirmation.as_str());
+            println!("sandbox_auto_ok: {}", store.config().sandbox_auto_ok);
+            println!("scan_limit:  {}", store.config().scan_limit);
+            println!();
+            println!("change with: nexus mode simple | nexus mode developer");
+        }
+        Some(m) => match Mode::from_str(m) {
+            Some(target) => {
+                match store.set_mode(target) {
+                    Ok(_) => println!("Mode set to '{}' and saved to {}.", target.as_str(), store.path().display()),
+                    Err(e) => {
+                        eprintln!("failed to save config: {e}");
+                        std::process::exit(1);
+                    }
+                }
+            }
+            None => {
+                eprintln!("unknown mode: {m} (use simple | developer)");
+                std::process::exit(2);
+            }
+        },
+    }
+}
+
+fn config_cmd() {
+    use nexus_config::ConfigStore;
+    let store = ConfigStore::load();
+    println!("NEXUS CONFIG — {}", store.path().display());
+    println!("----------------------");
+    let c = store.config();
+    println!("mode            = {}", c.mode.as_str());
+    println!("confirmation    = {}", c.confirmation.as_str());
+    println!("sandbox_auto_ok = {}", c.sandbox_auto_ok);
+    println!("scan_limit      = {}", c.scan_limit);
 }
 
 fn act(args: &[String]) {

@@ -17,3 +17,4 @@ nexus-audit = { path = "../../crates/nexus-audit" }
 nexus-actions = { path = "../../crates/nexus-actions" }
 nexus-ai = { path = "../../crates/nexus-ai" }
 nexus-sandbox = { path = "../../crates/nexus-sandbox" }
+nexus-config = { path = "../../crates/nexus-config" }

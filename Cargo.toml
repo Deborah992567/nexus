@@ -15,5 +15,6 @@ members = [
   "crates/nexus-policy",
   "crates/nexus-audit",
   "crates/nexus-api",
+  "crates/nexus-sandbox",
 ]
 resolver = "2"

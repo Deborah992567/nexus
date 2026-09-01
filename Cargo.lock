@@ -19,20 +19,40 @@ name = "nexus-actions"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "nexus-audit",
+ "nexus-core",
+ "nexus-policy",
+ "thiserror",
 ]
 
 [[package]]
 name = "nexus-ai"
 version = "0.1.0"
 dependencies = [
- "libc",
+ "nexus-core",
+ "nexus-diagnostics",
+ "nexus-policy",
+ "nexus-security",
+ "nexus-storage",
 ]
 
 [[package]]
 name = "nexus-api"
 version = "0.1.0"
 dependencies = [
- "libc",
+ "anyhow",
+ "nexus-actions",
+ "nexus-ai",
+ "nexus-audit",
+ "nexus-core",
+ "nexus-diagnostics",
+ "nexus-network",
+ "nexus-platform",
+ "nexus-policy",
+ "nexus-process",
+ "nexus-resource",
+ "nexus-security",
+ "nexus-storage",
 ]
 
 [[package]]
@@ -47,15 +67,23 @@ name = "nexus-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "nexus-actions",
+ "nexus-ai",
+ "nexus-audit",
  "nexus-core",
  "nexus-diagnostics",
  "nexus-network",
  "nexus-platform",
  "nexus-process",
  "nexus-resource",
+ "nexus-sandbox",
  "nexus-security",
  "nexus-storage",
 ]
+
+[[package]]
+name = "nexus-config"
+version = "0.1.0"
 
 [[package]]
 name = "nexus-core"
@@ -97,6 +125,7 @@ name = "nexus-policy"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "thiserror",
 ]
 
 [[package]]
@@ -115,6 +144,14 @@ dependencies = [
  "nexus-core",
  "nexus-platform",
  "nexus-process",
+]
+
+[[package]]
+name = "nexus-sandbox"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "thiserror",
 ]
 
 [[package]]

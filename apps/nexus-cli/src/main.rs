@@ -61,12 +61,18 @@ fn main() -> Result<()> {
         Some("act") => {
             act(&args[1..]);
         }
+        Some("advice") => {
+            let storage = analyze(Path::new(&home_scan_root()));
+            let report = analyze_diagnostics(&snapshot, storage.as_ref());
+            let security = assess_all(&snapshot.processes);
+            print_advice(&report, &security, storage.as_ref());
+        }
         Some(cmd) => {
-            eprintln!("unknown command: {cmd} (use status | health | processes | storage | network | diagnostics | security | audit | act)");
+            eprintln!("unknown command: {cmd} (use status | health | processes | storage | network | diagnostics | security | audit | act | advice)");
             std::process::exit(2);
         }
         None => {
-            eprintln!("usage: nexus <status|health|processes|storage|network|diagnostics|security|audit|act>");
+            eprintln!("usage: nexus <status|health|processes|storage|network|diagnostics|security|audit|act|advice>");
             std::process::exit(2);
         }
     }
@@ -468,6 +474,44 @@ fn act(args: &[String]) {
                 }
             }
         }
+    }
+}
+
+fn print_advice(
+    report: &nexus_diagnostics::DiagnosticReport,
+    security: &nexus_security::SecurityReport,
+    storage: Option<&nexus_storage::StorageAnalysis>,
+) {
+    use nexus_ai::analyze_local;
+
+    println!("NEXUS ADVISOR");
+    println!("-------------");
+    let (info, recs) = analyze_local(&report, Some(security), storage);
+    println!("model: {} ({})", info.model_id, info.backend);
+    println!("disclaimer: {}", info.disclaimer);
+    println!();
+
+    if recs.is_empty() {
+        println!("No actionable recommendations right now. NEXUS only advises on real, evidence-backed findings.");
+        return;
+    }
+    for (i, r) in recs.iter().enumerate() {
+        println!(
+            "{} {:<12} [{}] {}",
+            i + 1,
+            r.kind.as_str(),
+            r.remedy_risk.as_deref().unwrap_or("n/a"),
+            r.summary
+        );
+        println!("     target: {}", r.target);
+        for reason in &r.rationale {
+            println!("     because: {reason}");
+        }
+        for ev in &r.evidence {
+            println!("     evidence: {ev}");
+        }
+        println!("     proposed action: {} (advisory only; review before running)", r.suggested_action);
+        println!("     via: `nexus act plan {} <target> --yes`", r.suggested_action);
     }
 }
 

@@ -4,5 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-libc = "0.2.126"
-
+nexus-core = { path = "../nexus-core" }
+nexus-diagnostics = { path = "../nexus-diagnostics" }
+nexus-security = { path = "../nexus-security" }
+nexus-policy = { path = "../nexus-policy" }
+nexus-storage = { path = "../nexus-storage" }

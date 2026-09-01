@@ -67,12 +67,15 @@ fn main() -> Result<()> {
             let security = assess_all(&snapshot.processes);
             print_advice(&report, &security, storage.as_ref());
         }
+        Some("sandbox") => {
+            sandbox(args.get(1).map(String::as_str));
+        }
         Some(cmd) => {
-            eprintln!("unknown command: {cmd} (use status | health | processes | storage | network | diagnostics | security | audit | act | advice)");
+            eprintln!("unknown command: {cmd} (use status | health | processes | storage | network | diagnostics | security | audit | act | advice | sandbox)");
             std::process::exit(2);
         }
         None => {
-            eprintln!("usage: nexus <status|health|processes|storage|network|diagnostics|security|audit|act|advice>");
+            eprintln!("usage: nexus <status|health|processes|storage|network|diagnostics|security|audit|act|advice|sandbox>");
             std::process::exit(2);
         }
     }
@@ -386,6 +389,89 @@ fn resolve_action(action: &str, target: &str) -> Option<nexus_actions::Action> {
         "kill" => target.parse::<i32>().ok().map(|pid| nexus_actions::Action::KillProcess { pid }),
         "delete" => Some(nexus_actions::Action::DeleteFile { path: target.to_string() }),
         _ => None,
+    }
+}
+
+fn sandbox(sub: Option<&str>) {
+    use std::path::Path;
+
+    let supported = nexus_sandbox::supports_sandbox();
+    match sub {
+        None => {
+            println!("NEXUS SANDBOX");
+            println!("-------------");
+            match nexus_sandbox::find_sandbox_exec() {
+                Some(p) => println!("mechanism: {} (seatbelt MAC)", p.display()),
+                None => println!("mechanism: NONE — OS-level sandboxing not available on this host"),
+            }
+            println!("supported: {}", if supported { "yes" } else { "no" });
+            println!();
+            println!("subcommands:");
+            println!("  nexus sandbox status        show mechanism + available profiles");
+            println!("  nexus sandbox demo          run a genuine write-deny demonstration");
+            if !supported {
+                println!();
+                println!("This host provides no sandbox mechanism; NEXUS will not fake enforcement.");
+            }
+        }
+        Some("status") => {
+            let profiles = [
+                ("network_isolation", "denies all network access"),
+                ("read_only", "denies all file writes (reads/exec allowed)"),
+                ("isolated", "denies network + file writes"),
+            ];
+            println!("MECHANISM: {}", if supported { "seatbelt (sandbox-exec)" } else { "unavailable" });
+            if supported {
+                println!("AVAILABLE PROFILES:");
+                for (name, desc) in profiles {
+                    println!("  {:<18} {desc}", name);
+                }
+            } else {
+                println!("No sandbox mechanism detected. No profile can be enforced honestly.");
+            }
+        }
+        Some("demo") => {
+            if !supported {
+                eprintln!("Cannot demonstrate: this host has no sandbox mechanism.");
+                std::process::exit(1);
+            }
+            // Control: a write is permitted outside the sandbox.
+            let target = std::env::temp_dir().join(format!("nexus_demo_{}.txt", std::process::id()));
+            let _ = std::fs::remove_file(&target);
+            std::fs::write(&target, "control").expect("control write");
+            println!("control: wrote {}", target.display());
+            // Sandboxed: the same write is denied.
+            let _ = std::fs::remove_file(&target);
+            let profile =
+                nexus_sandbox::SandboxProfile::read_only("cli-demo");
+            let run = nexus_sandbox::run_boxed(
+                &profile,
+                Path::new("/bin/sh"),
+                &["-c", &format!("echo x > {}", target.display())],
+            );
+            match run {
+                Ok(r) => {
+                    println!("sandboxed write attempted -> enforced={}", r.enforced);
+                    let exists = target.exists();
+                    println!("file created: {} (must be false for enforcement)", exists);
+                    if exists {
+                        println!("WARNING: write was NOT blocked!");
+                        std::process::exit(1);
+                    }
+                    println!("policy applied: {}", r.policy);
+                    println!("RESULT: write genuinely denied by seatbelt.");
+                }
+                Err(e) => {
+                    eprintln!("sandbox error: {e}");
+                    std::process::exit(1);
+                }
+            }
+            let _ = std::fs::remove_file(&target);
+        }
+        Some(other) => {
+            eprintln!("unknown sandbox subcommand: {other} (use status | demo)");
+            std::process::exit(2);
+        }
     }
 }
 

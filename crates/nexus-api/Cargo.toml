@@ -4,5 +4,16 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-libc = "0.2.126"
-
+anyhow = "1"
+nexus-core = { path = "../nexus-core" }
+nexus-platform = { path = "../nexus-platform" }
+nexus-resource = { path = "../nexus-resource" }
+nexus-process = { path = "../nexus-process" }
+nexus-storage = { path = "../nexus-storage" }
+nexus-network = { path = "../nexus-network" }
+nexus-diagnostics = { path = "../nexus-diagnostics" }
+nexus-security = { path = "../nexus-security" }
+nexus-policy = { path = "../nexus-policy" }
+nexus-actions = { path = "../nexus-actions" }
+nexus-audit = { path = "../nexus-audit" }
+nexus-ai = { path = "../nexus-ai" }

@@ -41,8 +41,9 @@ fn main() -> Result<()> {
                 print_process_inspect(&snapshot, pid);
             }
             Some("tree") => print_process_tree(&snapshot),
+            Some("json") => print_processes_json(&snapshot),
             Some(other) => {
-                eprintln!("unknown processes subcommand: {other} (use list omitted, inspect <pid>, tree)");
+                eprintln!("unknown processes subcommand: {other} (use list omitted, inspect <pid>, tree, json)");
                 std::process::exit(2);
             }
         },
@@ -183,6 +184,34 @@ fn parse_pid(value: Option<&String>) -> Result<i32> {
         .ok_or_else(|| anyhow::anyhow!("missing pid"))?
         .parse::<i32>()
         .map_err(Into::into)
+}
+
+fn print_processes_json(snapshot: &Snapshot) {
+    println!("[");
+    let processes = sort_by_cpu(snapshot.processes.clone());
+    for (i, p) in processes.iter().enumerate() {
+        let cmdline = p.cmdline.join(" ");
+        let exe = p.exe_path.clone().unwrap_or_default();
+        let comma = if i + 1 < processes.len() { "," } else { "" };
+        println!(
+            "  {{\"pid\":{},\"name\":\"{}\",\"user\":\"{}\",\"status\":\"{}\",\
+\"cpu\":{:.1},\"rss_bytes\":{},\"vmsize_bytes\":{},\"runtime_seconds\":{},\
+\"threads\":{},\"cmdline\":\"{}\",\"exe\":\"{}\"}}{}",
+            p.pid,
+            p.name.replace('"', "\\\""),
+            p.user.replace('"', "\\\""),
+            p.status.replace('"', "\\\""),
+            p.cpu_percent,
+            p.rss_bytes,
+            p.vmsize_bytes,
+            p.runtime_seconds,
+            p.threads,
+            cmdline.replace('"', "\\\""),
+            exe.replace('"', "\\\""),
+            comma
+        );
+    }
+    println!("]");
 }
 
 fn print_processes(snapshot: &Snapshot) {

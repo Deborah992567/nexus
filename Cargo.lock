@@ -96,7 +96,9 @@ version = "0.1.0"
 dependencies = [
  "nexus-api",
  "nexus-core",
+ "nexus-network",
  "nexus-process",
+ "nexus-security",
 ]
 
 [[package]]

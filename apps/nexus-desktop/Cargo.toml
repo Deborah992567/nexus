@@ -14,3 +14,5 @@ path = "src/main.rs"
 nexus-api = { path = "../../crates/nexus-api" }
 nexus-core = { path = "../../crates/nexus-core" }
 nexus-process = { path = "../../crates/nexus-process" }
+nexus-network = { path = "../../crates/nexus-network" }
+nexus-security = { path = "../../crates/nexus-security" }

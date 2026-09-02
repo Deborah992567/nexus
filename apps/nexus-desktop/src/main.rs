@@ -9,7 +9,8 @@
 //! No data is faked: each frame re-reads the system through the API.
 
 use nexus_api::Nexus;
-use nexus_desktop::render_frame;
+use nexus_desktop::render_full_frame;
+use std::time::Duration;
 
 const REFRESH_MS: u64 = 1500;
 
@@ -21,17 +22,13 @@ fn main() {
         Some("version") => {
             println!("nexus-desktop {} (NEXUS TUI)", env!("CARGO_PKG_VERSION"));
         }
-        Some("once") => {
-            match Nexus::new().snapshot() {
-                Ok(snap) => {
-                    println!("{}", render_frame(&snap));
-                }
-                Err(e) => {
-                    eprintln!("error collecting snapshot: {e}");
-                    std::process::exit(1);
-                }
+        Some("once") => match render_one(&nexus) {
+            Ok(frame) => println!("{frame}"),
+            Err(e) => {
+                eprintln!("error: {e}");
+                std::process::exit(1);
             }
-        }
+        },
         Some(other) => {
             eprintln!("unknown argument: {other} (use 'once' or 'version', or nothing for live mode)");
             std::process::exit(2);
@@ -40,23 +37,31 @@ fn main() {
     }
 }
 
+/// Fetch a snapshot + bandwidth + security and compose a full frame.
+fn render_one(nexus: &Nexus) -> Result<String, String> {
+    let snap = nexus.snapshot().map_err(|e| e.to_string())?;
+    let bw = nexus.bandwidth(Duration::from_millis(700)).unwrap_or_default();
+    let sec = nexus.security().unwrap_or_else(|_| nexus_security::assess_all(&[]));
+    Ok(render_full_frame(&snap, &bw, &sec))
+}
+
 /// Live dashboard loop until interrupted; uses ANSI clear for a smooth redraw.
 fn live_loop(nexus: &Nexus) {
     let ok = is_tty();
     eprintln!("NEXUS Desktop — live dashboard (Ctrl-C to exit)");
     loop {
-        match nexus.snapshot() {
-            Ok(snap) => {
+        match render_one(nexus) {
+            Ok(frame) => {
                 if ok {
                     print!("\x1b[2J\x1b[H"); // clear + home
                 }
-                println!("{}", render_frame(&snap));
+                println!("{frame}");
             }
             Err(e) => {
-                eprintln!("[error collecting snapshot: {e}]");
+                eprintln!("[error: {e}]");
             }
         }
-        std::thread::sleep(std::time::Duration::from_millis(REFRESH_MS));
+        std::thread::sleep(Duration::from_millis(REFRESH_MS));
     }
 }
 

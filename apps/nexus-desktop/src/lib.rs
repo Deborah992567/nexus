@@ -86,6 +86,62 @@ pub fn render_frame(snapshot: &Snapshot) -> String {
     lines.join("\n")
 }
 
+/// Render live bandwidth samples (from `Nexus::bandwidth`) into lines.
+pub fn network_lines(samples: &[nexus_network::BandwidthSample]) -> Vec<String> {
+    if samples.is_empty() {
+        return vec!["(no interface samples)".to_string()];
+    }
+    samples
+        .iter()
+        .map(|s| {
+            format!(
+                "{:<12} in {}  out {}",
+                truncate(&s.interface, 12),
+                nexus_network::format_rate(s.bytes_in_per_sec),
+                nexus_network::format_rate(s.bytes_out_per_sec)
+            )
+        })
+        .collect()
+}
+
+/// Render the high-risk tail of a security report.
+pub fn security_lines(report: &nexus_security::SecurityReport) -> Vec<String> {
+    let risky: Vec<_> = report
+        .assessments
+        .iter()
+        .filter(|a| a.risk == nexus_security::RiskLevel::High)
+        .collect();
+    if risky.is_empty() {
+        return vec![format!("(no high-risk processes; {} assessed)", report.assessed)];
+    }
+    risky
+        .iter()
+        .map(|a| format!("{}: {} (score {:.1})", a.pid, truncate(&a.name, 20), a.score))
+        .take(6)
+        .collect()
+}
+
+/// Compose a frame that joins the system snapshot with network + security.
+pub fn render_full_frame(
+    snapshot: &Snapshot,
+    samples: &[nexus_network::BandwidthSample],
+    security: &nexus_security::SecurityReport,
+) -> String {
+    let mut lines = Vec::new();
+    lines.push(render_frame(snapshot));
+    lines.push("─────────────────────────────────────────────".to_string());
+    lines.push(" NETWORK".to_string());
+    for l in network_lines(samples) {
+        lines.push(format!("   {l}"));
+    }
+    lines.push("─────────────────────────────────────────────".to_string());
+    lines.push(" SECURITY".to_string());
+    for l in security_lines(security) {
+        lines.push(format!("   {l}"));
+    }
+    lines.join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -189,4 +189,64 @@ mod tests {
         assert!(frame.contains("MEM"));
         assert!(frame.contains("TOP PROCESSES"));
     }
+
+    #[test]
+    fn network_lines_renders_rates() {
+        use nexus_network::BandwidthSample;
+        let samples = vec![
+            BandwidthSample { interface: "en0".into(), window: std::time::Duration::from_secs(1), bytes_in_per_sec: 1024.0 * 1024.0, bytes_out_per_sec: 512.0 * 1024.0 },
+            BandwidthSample { interface: "lo0".into(), window: std::time::Duration::from_secs(1), bytes_in_per_sec: 0.0, bytes_out_per_sec: 0.0 },
+        ];
+        let lines = network_lines(&samples);
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].contains("en0"));
+        assert!(lines[0].contains("MiB/s"));
+    }
+
+    #[test]
+    fn network_lines_empty_is_honest() {
+        assert!(network_lines(&[]).first().unwrap().contains("no interface"));
+    }
+
+    #[test]
+    fn security_lines_reports_no_high_risk_plainly() {
+        let report = nexus_security::assess_all(&[]);
+        let lines = security_lines(&report);
+        assert!(lines.first().unwrap().contains("no high-risk"));
+    }
+
+    #[test]
+    fn security_lines_flags_impersonating_system_process() {
+        // A process presenting as 'launchd' from a non-canonical path earns
+        // an Impersonation signal whose score (0.68) genuinely reaches High.
+        let suspicious = vec![nexus_core::ProcessSnapshot {
+            pid: 9001,
+            ppid: 1,
+            name: "launchd".into(),
+            user: "u".into(),
+            status: "running".into(),
+            cpu_percent: 0.0,
+            rss_bytes: 0,
+            vmsize_bytes: 0,
+            runtime_seconds: 0,
+            start_time_ticks: 0,
+            threads: 1,
+            cmdline: vec![].into(),
+            exe_path: Some("/tmp/fake_launchd".into()),
+            fd_count: None,
+        }];
+        let report = nexus_security::assess_all(&suspicious);
+        assert!(report.high > 0, "impersonation should be high risk");
+        let lines = security_lines(&report);
+        assert!(lines.iter().any(|l| l.contains("9001")));
+    }
+
+    #[test]
+    fn full_frame_includes_all_panels() {
+        let report = nexus_security::assess_all(&[]);
+        let frame = render_full_frame(&snap(), &[], &report);
+        assert!(frame.contains("NETWORK"));
+        assert!(frame.contains("SECURITY"));
+        assert!(frame.contains("TOP PROCESSES"));
+    }
 }

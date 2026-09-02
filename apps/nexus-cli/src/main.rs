@@ -47,8 +47,31 @@ fn main() -> Result<()> {
             }
         },
         Some("storage") => {
-            let root = args.get(1).cloned().unwrap_or_else(|| home_scan_root());
-            print_storage(&root);
+            let mut root = home_scan_root();
+            let mut top = 15usize;
+            let mut i = 1;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--top" => {
+                        if let Some(v) = args.get(i + 1).and_then(|s| s.parse::<usize>().ok()) {
+                            top = v;
+                            i += 2;
+                        } else {
+                            eprintln!("error: --top requires a positive integer");
+                            std::process::exit(2);
+                        }
+                    }
+                    p if p.starts_with("--") => {
+                        eprintln!("error: unknown storage flag {p}");
+                        std::process::exit(2);
+                    }
+                    dir => {
+                        root = dir.to_string();
+                        i += 1;
+                    }
+                }
+            }
+            print_storage(&root, top);
         }
         Some("network") => {
             match args.get(1).map(String::as_str) {
@@ -267,7 +290,7 @@ fn home_scan_root() -> String {
     std::env::var("HOME").unwrap_or_else(|_| "/Users".to_string())
 }
 
-fn print_storage(root: &str) {
+fn print_storage(root: &str, top: usize) {
     let root_path = Path::new(root);
     if !root_path.is_dir() {
         eprintln!("error: {root} is not a readable directory");
@@ -293,7 +316,7 @@ fn print_storage(root: &str) {
             if !analysis.large_files.is_empty() {
                 println!("LARGE FILES");
                 println!("----------");
-                for item in analysis.large_files.iter().take(15) {
+                for item in analysis.large_files.iter().take(top) {
                     let marker = if item.safe_to_reclaim { "reclaimable" } else { "keep" };
                     println!("  {:>10}  [{:<11}] {}", storage_format_bytes(item.size_bytes), marker, item.path.display());
                 }

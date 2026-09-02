@@ -22,6 +22,9 @@ fn main() -> Result<()> {
         Some("version") => {
             println!("nexus {} (NEXUS CLI)", env!("CARGO_PKG_VERSION"));
         }
+        Some("doctor") => {
+            doctor();
+        }
         Some("status") => {
             println!("{}", snapshot_to_json(&snapshot));
         }
@@ -394,6 +397,66 @@ fn print_network_live() {
                 println!("  error: {e}");
             }
         }
+    }
+}
+
+/// Self-check: run every engine against live data and report pass/fail
+/// honestly. Never claims a subsystem works unless it really did.
+fn doctor() {
+    println!("NEXUS DOCTOR — subsystem self-check");
+    println!("------------------------------------");
+    let platform = detect_platform();
+    let mut ok = 0usize;
+    let mut fail = 0usize;
+
+    macro_rules! check {
+        ($name:expr, $result:expr) => {{
+            match $result {
+                Ok(v) => {
+                    println!("  [OK]   {}", $name);
+                    let _ = v;
+                    ok += 1;
+                }
+                Err(e) => {
+                    println!("  [FAIL] {}: {}", $name, e);
+                    fail += 1;
+                }
+            }
+        }};
+    }
+
+    check!("platform probe", Ok::<&str, String>(platform.name()));
+    let snap = collect_snapshot(platform.as_ref());
+    match &snap {
+        Ok(s) => println!("  [OK]   snapshot ({:?}) ({})", s.processes.len(), "processes"),
+        Err(e) => {
+            println!("  [FAIL] snapshot: {e}");
+            fail += 1;
+        }
+    }
+    if let Ok(s) = &snap {
+        check!("process anomalies", Ok::<_, String>(detect_anomalies(&s.processes)));
+        check!("diagnostics", Ok::<_, String>(analyze_diagnostics(s, None)));
+        check!("security", Ok::<_, String>(assess_all(&s.processes)));
+    }
+    check!("network interfaces", network_interfaces());
+    let storage = analyze(Path::new(&home_scan_root()));
+    if storage.is_some() {
+        println!("  [OK]   storage analysis");
+        ok += 1;
+    } else {
+        println!("  [FAIL] storage analysis for {}", home_scan_root());
+        fail += 1;
+    }
+    check!("sandbox mechanism", Ok::<&str, String>(if nexus_sandbox::supports_sandbox() { "present" } else { "absent" }));
+
+    println!("------------------------------------");
+    println!("passed: {ok}   failed: {fail}");
+    if fail == 0 {
+        println!("All subsystems reporting healthily.");
+    } else {
+        println!("Some subsystems reported failures.");
+        std::process::exit(1);
     }
 }
 

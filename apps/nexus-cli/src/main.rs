@@ -19,6 +19,9 @@ fn main() -> Result<()> {
     let snapshot = collect_snapshot(platform.as_ref())?;
 
     match args.first().map(String::as_str) {
+        Some("version") => {
+            println!("nexus {} (NEXUS CLI)", env!("CARGO_PKG_VERSION"));
+        }
         Some("status") => {
             println!("{}", snapshot_to_json(&snapshot));
         }
@@ -45,7 +48,10 @@ fn main() -> Result<()> {
             print_storage(&root);
         }
         Some("network") => {
-            print_network();
+            match args.get(1).map(String::as_str) {
+                Some("live") => print_network_live(),
+                _ => print_network(),
+            }
         }
         Some("diagnostics") => {
             let report = analyze_diagnostics(&snapshot, None);
@@ -356,6 +362,37 @@ fn print_network() {
         Err(e) => {
             eprintln!("error enumerating network interfaces: {e}");
             std::process::exit(1);
+        }
+    }
+}
+
+/// Continuous live bandwidth readout (2s sampling window) until Ctrl-C.
+fn print_network_live() {
+    use nexus_network::NetworkError;
+    eprintln!("LIVE BANDWIDTH (Ctrl-C to stop)");
+    loop {
+        match bandwidth(&mut network_interfaces, Duration::from_secs(2)) {
+            Ok(samples) => {
+                if samples.is_empty() {
+                    println!("  (no consistent interfaces observed)");
+                } else {
+                    for s in &samples {
+                        println!(
+                            "  {:<12} in {:>12}   out {:>12}",
+                            s.interface,
+                            format_rate(s.bytes_in_per_sec),
+                            format_rate(s.bytes_out_per_sec)
+                        );
+                    }
+                    println!();
+                }
+            }
+            Err(NetworkError::PlatformLimited(msg)) => {
+                println!("  PLATFORM-LIMITED: {msg}");
+            }
+            Err(e) => {
+                println!("  error: {e}");
+            }
         }
     }
 }

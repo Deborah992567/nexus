@@ -16,3 +16,4 @@ nexus-core = { path = "../../crates/nexus-core" }
 nexus-process = { path = "../../crates/nexus-process" }
 nexus-network = { path = "../../crates/nexus-network" }
 nexus-security = { path = "../../crates/nexus-security" }
+nexus-config = { path = "../../crates/nexus-config" }

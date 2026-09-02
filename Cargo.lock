@@ -95,6 +95,7 @@ name = "nexus-desktop"
 version = "0.1.0"
 dependencies = [
  "nexus-api",
+ "nexus-config",
  "nexus-core",
  "nexus-network",
  "nexus-process",

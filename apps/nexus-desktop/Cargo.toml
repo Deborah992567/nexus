@@ -5,3 +5,12 @@ edition = "2021"
 
 [lib]
 path = "src/lib.rs"
+
+[[bin]]
+name = "nexus-desktop"
+path = "src/main.rs"
+
+[dependencies]
+nexus-api = { path = "../../crates/nexus-api" }
+nexus-core = { path = "../../crates/nexus-core" }
+nexus-process = { path = "../../crates/nexus-process" }

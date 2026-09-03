@@ -58,8 +58,9 @@ fn main() -> Result<()> {
             }
             Some("tree") => print_process_tree(&snapshot),
             Some("json") => print_processes_json(&snapshot),
+            Some("csv") => print_processes_csv(&snapshot),
             Some(other) => {
-                eprintln!("unknown processes subcommand: {other} (use list omitted, inspect <pid>, tree, json)");
+                eprintln!("unknown processes subcommand: {other} (use list omitted, inspect <pid>, tree, json, csv)");
                 std::process::exit(2);
             }
         },
@@ -171,7 +172,7 @@ fn print_usage() {
     println!("commands:");
     println!("  status        JSON snapshot (CPU/mem/disk/processes)");
     println!("  health        summary + issues");
-    println!("  processes     top processes (list | inspect <pid> | tree)");
+    println!("  processes     top processes (list | inspect <pid> | tree | json | csv)");
     println!("  storage       storage analysis of a path (default: home)");
     println!("  network       interface counters + live bandwidth");
     println!("  diagnostics   correlated diagnosis of the current snapshot");
@@ -250,6 +251,33 @@ fn print_processes_json(snapshot: &Snapshot) {
         );
     }
     println!("]");
+}
+
+fn print_processes_csv(snapshot: &Snapshot) {
+    println!("pid,name,user,status,cpu_percent,rss_bytes,vmsize_bytes,runtime_seconds,threads,cmdline,exe");
+    let processes = sort_by_cpu(snapshot.processes.clone());
+    for p in processes.iter() {
+        let cmdline = p.cmdline.join(" ");
+        let exe = p.exe_path.clone().unwrap_or_default();
+        println!(
+            "{},{},{},{},{:.1},{},{},{},{},\"{}\",\"{}\"",
+            p.pid,
+            csv_escape(&p.name),
+            csv_escape(&p.user),
+            csv_escape(&p.status),
+            p.cpu_percent,
+            p.rss_bytes,
+            p.vmsize_bytes,
+            p.runtime_seconds,
+            p.threads,
+            csv_escape(&cmdline),
+            csv_escape(&exe)
+        );
+    }
+}
+
+fn csv_escape(value: &str) -> String {
+    value.replace('"', "\"\"").replace('\n', " ")
 }
 
 fn print_processes(snapshot: &Snapshot) {

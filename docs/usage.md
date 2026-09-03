@@ -25,6 +25,7 @@ scripts or tooling:
 | `nexus status`                | JSON snapshot (CPU / memory / disk / processes)    |
 | `nexus health json`           | health score, status, and per-issue details        |
 | `nexus processes json`        | process list (sorted by CPU) as a JSON array       |
+| `nexus processes csv`         | process list (sorted by CPU) as a CSV document     |
 | `nexus storage --top N [dir]` | N largest files found while scanning `dir`         |
 | `nexus network json`          | per-interface name/index/cumulative byte counters  |
 | `nexus network live`          | continuous per-interface bandwidth readout         |
@@ -39,7 +40,7 @@ can be parsed by `jq` or any JSON consumer.
 
 ## Capabilities by area
 
-- **Processes** — `nexus processes` (top by CPU), `inspect <pid>`, `tree`, `json`.
+- **Processes** — `nexus processes` (top by CPU), `inspect <pid>`, `tree`, `json`, `csv`.
 - **Storage** — `nexus storage --top N [dir]`; read-only, never deletes anything.
 - **Network** — `nexus network` (interface counters), `network live`
   (bandwidth), `network json`.

@@ -31,8 +31,24 @@ fn main() -> Result<()> {
         Some("health") => {
             let anomalies = detect_anomalies(&snapshot.processes);
             let report = HealthReport::from_snapshot(&snapshot, &anomalies_as_issues(&anomalies));
-            println!("{}", report.summary());
-            println!("\n{}", report.details());
+            match args.get(1).map(String::as_str) {
+                Some("json") => {
+                    println!("{{");
+                    println!("  \"score\": {},", report.score);
+                    println!("  \"status\": \"{}\",", report.status);
+                    println!("  \"issues\": [");
+                    for (i, issue) in report.issues.iter().enumerate() {
+                        let comma = if i + 1 < report.issues.len() { "," } else { "" };
+                        println!("    \"{}\"{}", issue.replace('"', "\\\""), comma);
+                    }
+                    println!("  ]");
+                    println!("}}");
+                }
+                _ => {
+                    println!("{}", report.summary());
+                    println!("\n{}", report.details());
+                }
+            }
         }
         Some("processes") => match args.get(1).map(String::as_str) {
             None => print_processes(&snapshot),

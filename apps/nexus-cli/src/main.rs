@@ -93,12 +93,16 @@ fn main() -> Result<()> {
         Some("network") => {
             match args.get(1).map(String::as_str) {
                 Some("live") => print_network_live(),
+                Some("json") => print_network_json(),
                 _ => print_network(),
             }
         }
         Some("diagnostics") => {
             let report = analyze_diagnostics(&snapshot, None);
-            print_diagnostics(&report);
+            match args.get(1).map(String::as_str) {
+                Some("json") => print_diagnostics_json(&report),
+                _ => print_diagnostics(&report),
+            }
         }
         Some("security") => {
             let report = assess_all(&snapshot.processes);
@@ -440,9 +444,30 @@ fn print_network() {
     }
 }
 
+/// One-shot JSON report of interfaces and their current bandwidth.
+fn print_network_json() {
+    println!("{{");
+    println!("  \"interfaces\": [");
+    match network_interfaces() {
+        Ok(ifaces) => {
+            let mut ifaces = ifaces;
+            ifaces.sort_by(|a, b| a.name.cmp(&b.name));
+            for (i, iface) in ifaces.iter().enumerate() {
+                let comma = if i + 1 < ifaces.len() { "," } else { "" };
+                println!(
+                    "    {{\"name\":\"{}\",\"index\":{},\"cum_in_bytes\":{},\"cum_out_bytes\":{}}}{}",
+                    iface.name, iface.index, iface.cum_in_bytes, iface.cum_out_bytes, comma
+                );
+            }
+        }
+        Err(e) => println!("    [\"error\": \"{e}\"]"),
+    }
+    println!("  ]");
+    println!("}}");
+}
+
 /// Continuous live bandwidth readout (2s sampling window) until Ctrl-C.
-fn print_network_live() {
-    use nexus_network::NetworkError;
+fn print_network_live() {    use nexus_network::NetworkError;
     eprintln!("LIVE BANDWIDTH (Ctrl-C to stop)");
     loop {
         match bandwidth(&mut network_interfaces, Duration::from_secs(2)) {
@@ -550,6 +575,30 @@ fn print_diagnostics(report: &nexus_diagnostics::DiagnosticReport) {
         println!("      next: {}", finding.suggested_action);
         println!();
     }
+}
+
+fn print_diagnostics_json(report: &nexus_diagnostics::DiagnosticReport) {
+    println!("{{");
+    println!("  \"platform\": \"{}\",", report.platform);
+    println!("  \"overall\": \"{}\",", report.overall.as_str());
+    println!("  \"findings\": [");
+    for (i, f) in report.findings.iter().enumerate() {
+        let comma = if i + 1 < report.findings.len() { "," } else { "" };
+        println!("    {{");
+        println!("      \"severity\": \"{}\",", f.severity.as_str());
+        println!("      \"title\": \"{}\",", f.title.replace('"', "\\\""));
+        println!("      \"explanation\": \"{}\",", f.explanation.replace('"', "\\\""));
+        println!("      \"evidence\": [");
+        for (j, e) in f.evidence.iter().enumerate() {
+            let comma_e = if j + 1 < f.evidence.len() { "," } else { "" };
+            println!("        \"{}\"{}", e.replace('"', "\\\""), comma_e);
+        }
+        println!("      ],");
+        println!("      \"suggested_action\": \"{}\"", f.suggested_action.replace('"', "\\\""));
+        println!("    }}{}", comma);
+    }
+    println!("  ]");
+    println!("}}");
 }
 
 fn print_security(report: &nexus_security::SecurityReport) {

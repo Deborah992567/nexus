@@ -42,6 +42,18 @@ fn main() {
         Some("mode") => {
             println!("dashboard mode: {} (persisted: config.conf)", mode.as_str());
         }
+        Some("health") => match nexus.health() {
+            Ok(h) => {
+                println!("health: {}/100 ({})", h.score, h.status);
+                for issue in &h.issues {
+                    println!("  - {issue}");
+                }
+            }
+            Err(e) => {
+                eprintln!("error: {e}");
+                std::process::exit(1);
+            }
+        },
         Some("once") => match render_one(&nexus, mode) {
             Ok(frame) => println!("{frame}"),
             Err(e) => {

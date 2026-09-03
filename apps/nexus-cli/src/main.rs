@@ -112,7 +112,10 @@ fn main() -> Result<()> {
             }
         }
         Some("audit") => {
-            print_audit();
+            match args.get(1).map(String::as_str) {
+                Some("json") => print_audit_json(),
+                _ => print_audit(),
+            }
         }
         Some("act") => {
             act(&args[1..]);
@@ -688,6 +691,24 @@ fn print_audit() {
     if count == 0 {
         println!("No actions recorded yet. Actions performed with 'nexus act' will appear here.");
     }
+}
+
+fn print_audit_json() {
+    let path = AuditLog::default_path();
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(_) => {
+            println!("[]");
+            return;
+        }
+    };
+    let records: Vec<&str> = content.lines().filter(|l| !l.trim().is_empty()).collect();
+    println!("[");
+    for (i, line) in records.iter().enumerate() {
+        let comma = if i + 1 < records.len() { "," } else { "" };
+        println!("  {}{}", line, comma);
+    }
+    println!("]");
 }
 
 fn persistent_engine() -> ActionEngine {

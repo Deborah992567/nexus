@@ -124,7 +124,10 @@ fn main() -> Result<()> {
             let storage = analyze(Path::new(&home_scan_root()));
             let report = analyze_diagnostics(&snapshot, storage.as_ref());
             let security = assess_all(&snapshot.processes);
-            print_advice(&report, &security, storage.as_ref());
+            match args.get(1).map(String::as_str) {
+                Some("json") => print_advice_json(&report, &security, storage.as_ref()),
+                _ => print_advice(&report, &security, storage.as_ref()),
+            }
         }
         Some("sandbox") => {
             sandbox(args.get(1).map(String::as_str));
@@ -979,6 +982,45 @@ fn print_advice(
         println!("     proposed action: {} (advisory only; review before running)", r.suggested_action);
         println!("     via: `nexus act plan {} <target> --yes`", r.suggested_action);
     }
+}
+
+fn print_advice_json(
+    report: &nexus_diagnostics::DiagnosticReport,
+    security: &nexus_security::SecurityReport,
+    storage: Option<&nexus_storage::StorageAnalysis>,
+) {
+    use nexus_ai::analyze_local;
+    let (info, recs) = analyze_local(&report, Some(security), storage);
+    println!("{{");
+    println!("  \"model_id\": \"{}\",", info.model_id);
+    println!("  \"backend\": \"{}\",", info.backend);
+    println!("  \"disclaimer\": \"{}\",", info.disclaimer.replace('"', "\\\""));
+    println!("  \"recommendations\": [");
+    for (i, r) in recs.iter().enumerate() {
+        let comma = if i + 1 < recs.len() { "," } else { "" };
+        println!("    {{");
+        println!("      \"kind\": \"{}\",", r.kind.as_str());
+        println!("      \"target\": \"{}\",", r.target.replace('"', "\\\""));
+        println!("      \"summary\": \"{}\",", r.summary.replace('"', "\\\""));
+        println!("      \"rationale\": [");
+        for (j, reason) in r.rationale.iter().enumerate() {
+            let comma_r = if j + 1 < r.rationale.len() { "," } else { "" };
+            println!("        \"{}\"{}", reason.replace('"', "\\\""), comma_r);
+        }
+        println!("      ],");
+        println!("      \"evidence\": [");
+        for (j, ev) in r.evidence.iter().enumerate() {
+            let comma_e = if j + 1 < r.evidence.len() { "," } else { "" };
+            println!("        \"{}\"{}", ev.replace('"', "\\\""), comma_e);
+        }
+        println!("      ],");
+        println!("      \"suggested_action\": \"{}\",", r.suggested_action);
+        println!("      \"remedy_risk\": \"{}\",", r.remedy_risk.as_deref().unwrap_or("n/a"));
+        println!("      \"source\": \"{}\"", r.source);
+        println!("    }}{}", comma);
+    }
+    println!("  ]");
+    println!("}}");
 }
 
 fn snapshot_to_json(snapshot: &Snapshot) -> String {

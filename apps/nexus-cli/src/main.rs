@@ -66,6 +66,7 @@ fn main() -> Result<()> {
         Some("storage") => {
             let mut root = home_scan_root();
             let mut top = 15usize;
+            let mut json = false;
             let mut i = 1;
             while i < args.len() {
                 match args[i].as_str() {
@@ -78,6 +79,10 @@ fn main() -> Result<()> {
                             std::process::exit(2);
                         }
                     }
+                    "--json" => {
+                        json = true;
+                        i += 1;
+                    }
                     p if p.starts_with("--") => {
                         eprintln!("error: unknown storage flag {p}");
                         std::process::exit(2);
@@ -88,7 +93,11 @@ fn main() -> Result<()> {
                     }
                 }
             }
-            print_storage(&root, top);
+            if json {
+                print_storage_json(&root, top);
+            } else {
+                print_storage(&root, top);
+            }
         }
         Some("network") => {
             match args.get(1).map(String::as_str) {
@@ -390,6 +399,49 @@ fn print_storage(root: &str, top: usize) {
         }
         None => {
             eprintln!("error: could not scan {root}");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn print_storage_json(root: &str, top: usize) {
+    let root_path = Path::new(root);
+    if !root_path.is_dir() {
+        eprintln!("{{\"error\": \"{root} is not a readable directory\"}}");
+        std::process::exit(1);
+    }
+    match analyze(root_path) {
+        Some(analysis) => {
+            println!("{{");
+            println!("  \"root\": \"{}\",", root);
+            println!("  \"total_bytes\": {},", analysis.total_bytes);
+            println!("  \"entries_scanned\": {},", analysis.entries_scanned);
+            println!("  \"entries_known\": {},", analysis.entries_known);
+            println!("  \"reclaimable_bytes\": {},", analysis.reclaimable_bytes);
+            println!("  \"by_category\": {{");
+            let cats: Vec<&nexus_storage::StorageCategory> = analysis.by_category.keys().collect();
+            for (i, cat) in cats.iter().enumerate() {
+                let comma = if i + 1 < cats.len() { "," } else { "" };
+                println!("    \"{}\": {}{}", cat.as_str(), analysis.by_category[*cat], comma);
+            }
+            println!("  }},");
+            println!("  \"large_files\": [");
+            for (i, item) in analysis.large_files.iter().take(top).enumerate() {
+                let comma = if i + 1 < analysis.large_files.len().min(top) { "," } else { "" };
+                println!(
+                    "    {{\"path\":\"{}\",\"size_bytes\":{},\"category\":\"{}\",\"safe_to_reclaim\":{}}}{}",
+                    item.path.display().to_string().replace('"', "\\\""),
+                    item.size_bytes,
+                    item.category.as_str(),
+                    item.safe_to_reclaim,
+                    comma
+                );
+            }
+            println!("  ]");
+            println!("}}");
+        }
+        None => {
+            eprintln!("{{\"error\": \"could not scan {root}\"}}");
             std::process::exit(1);
         }
     }

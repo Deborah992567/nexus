@@ -49,18 +49,71 @@ are wired through the same `SystemPlatform` abstraction):
 - `crates/nexus-config` — Simple/Developer mode + persisted settings
 - `crates/nexus-api` — programmatic facade composing every engine
 
+## Getting started
+
+**Prerequisites:** Rust (stable toolchain) on macOS. Linux targets are wired
+through the same `SystemPlatform` abstraction but the sandbox engine is
+seatbelt-based and therefore macOS-only.
+
+### 1. Build
+
+```sh
+cargo build --release
+```
+
+This compiles the whole workspace. The two applications land in
+`target/release/`:
+
+- `nexus-cli` — command-line interface
+- `nexus-desktop` — live terminal dashboard
+
+### 2. Run the CLI
+
+```sh
+./target/release/nexus-cli health       # OS health score + issues
+./target/release/nexus-cli status       # JSON snapshot (CPU/mem/disk/processes)
+./target/release/nexus-cli processes    # top processes by CPU
+```
+
+### 3. Run the dashboard (the application)
+
+```sh
+./target/release/nexus-desktop
+```
+
+The dashboard opens a full-screen **live-refresh terminal view**. It redraws
+each tick with genuinely live data: CPU, memory, disk, process list, network
+bandwidth, and security/attention notes. Press **Ctrl-C** to exit.
+
+Useful dashboard flags:
+
+```sh
+./target/release/nexus-desktop once          # render a single frame, then stop
+./target/release/nexus-desktop --simple      # force Simple mode for this run
+./target/release/nexus-desktop --developer   # force Developer mode for this run
+```
+
+> **Tip:** run the dashboard from a real, full-screen terminal so the live
+> redraw looks clean.
+
+### 4. Sandbox proof (optional)
+
+```sh
+./target/release/nexus-cli sandbox demo      # proves a seatbelt write is blocked
+```
+
 ## Commands
 
 ```
 nexus status        JSON snapshot (CPU/mem/disk/processes)
-nexus health        summary + issues
-nexus processes     top processes (list | inspect <pid> | tree)
-nexus storage       storage analysis (default: your home directory)
-nexus network       interface counters + live bandwidth
-nexus diagnostics   correlated diagnosis of the current snapshot
-nexus security      evidence-based process risk assessment
-nexus advice        advisory recommendations with evidence
-nexus audit         the persisted action journal
+nexus health        health score + issues (also: health json)
+nexus processes     top processes (list | inspect <pid> | tree | json | csv)
+nexus storage       storage analysis (default: your home directory) --top N --json
+nexus network       interface counters + live bandwidth (network json / live)
+nexus diagnostics   correlated diagnosis of the current snapshot (diagnostics json)
+nexus security      evidence-based process risk assessment (security json)
+nexus advice        advisory recommendations with evidence (advice json)
+nexus audit         the persisted action journal (audit json)
 nexus act           plan / execute a policy-checked action
 nexus sandbox       OS-level sandboxing status + live demo
 nexus mode          show/change UI mode (simple | developer)
@@ -70,6 +123,7 @@ nexus config        show persisted configuration
 ```
 nexus-desktop               live dashboard (honors Simple/Developer mode)
 nexus-desktop once          render a single frame
+nexus-desktop health        print health, then exit
 nexus-desktop --simple      force Simple mode for a run
 nexus-desktop --developer   force Developer mode for a run
 ```
@@ -79,8 +133,10 @@ nexus-desktop --developer   force Developer mode for a run
 ```sh
 cargo run -p nexus-cli -- health
 cargo run -p nexus-cli -- security
-cargo run -p nexus-cli -- sandbox demo      # proves a write is blocked
-cargo run -p nexus-desktop -- once          # render one TUI frame
+cargo run -p nexus-cli -- processes csv   # export process list as CSV
+cargo run -p nexus-cli -- sandbox demo    # proves a write is blocked
+cargo run -p nexus-desktop                # run the live dashboard
+cargo run -p nexus-desktop -- health      # print health, then exit
 ```
 
 ## Testing

@@ -86,7 +86,10 @@ fn main() -> Result<()> {
         }
         Some("security") => {
             let report = assess_all(&snapshot.processes);
-            print_security(&report);
+            match args.get(1).map(String::as_str) {
+                Some("json") => print_security_json(&report),
+                _ => print_security(&report),
+            }
         }
         Some("audit") => {
             print_audit();
@@ -563,6 +566,38 @@ fn print_security(report: &nexus_security::SecurityReport) {
     }
 
     println!("NOTE: These are evidence-based signals from process telemetry. NEXUS does not claim any process is malware without real evidence. Deeper monitoring (privilege escalation, file-access, syscalls) requires elevated privileges and is PLATFORM-LIMITED at this stage.");
+}
+
+fn print_security_json(report: &nexus_security::SecurityReport) {
+    println!("{{");
+    println!("  \"assessed\": {},", report.assessed);
+    println!("  \"low\": {},", report.low);
+    println!("  \"medium\": {},", report.medium);
+    println!("  \"high\": {},", report.high);
+    println!("  \"assessments\": [");
+    for (i, a) in report.assessments.iter().enumerate() {
+        let comma_a = if i + 1 < report.assessments.len() { "," } else { "" };
+        println!(
+            "    {{\"pid\":{},\"name\":\"{}\",\"risk\":\"{}\",\"score\":{:.2},\"signals\":[",
+            a.pid,
+            a.name.replace('"', "\\\""),
+            a.risk.as_str(),
+            a.score
+        );
+        for (j, s) in a.signals.iter().enumerate() {
+            let comma_s = if j + 1 < a.signals.len() { "," } else { "" };
+            println!(
+                "      {{\"kind\":\"{}\",\"confidence\":{:.2},\"explanation\":\"{}\"}}{}",
+                s.kind.as_str(),
+                s.confidence,
+                s.explanation.replace('"', "\\\""),
+                comma_s
+            );
+        }
+        println!("      ]}}{}", comma_a);
+    }
+    println!("  ]");
+    println!("}}");
 }
 
 fn print_audit() {

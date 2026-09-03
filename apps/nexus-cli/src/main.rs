@@ -4,7 +4,7 @@ use nexus_platform::detect_platform;
 use nexus_process::{anomalies_as_issues, build_tree, detect_anomalies, format_bytes, sort_by_cpu, ProcessNode};
 use nexus_resource::collect_snapshot;
 use nexus_storage::{analyze, format_bytes as storage_format_bytes};
-use nexus_network::{bandwidth, format_rate, network_interfaces};
+use nexus_network::{bandwidth, format_rate, network_connections, network_interfaces};
 use nexus_diagnostics::analyze as analyze_diagnostics;
 use nexus_security::assess_all;
 use nexus_actions::ActionEngine;
@@ -104,6 +104,8 @@ fn main() -> Result<()> {
             match args.get(1).map(String::as_str) {
                 Some("live") => print_network_live(),
                 Some("json") => print_network_json(),
+                Some("connections") => print_network_connections(),
+                Some("connections:json") => print_network_connections_json(),
                 _ => print_network(),
             }
         }
@@ -174,7 +176,7 @@ fn print_usage() {
     println!("  health        summary + issues");
     println!("  processes     top processes (list | inspect <pid> | tree | json | csv)");
     println!("  storage       storage analysis of a path (default: home)");
-    println!("  network       interface counters + live bandwidth");
+    println!("  network       interface counters + live bandwidth (network connections)");
     println!("  diagnostics   correlated diagnosis of the current snapshot");
     println!("  security      evidence-based process risk assessment");
     println!("  advice        advisory recommendations with evidence");
@@ -582,6 +584,64 @@ fn print_network_live() {    use nexus_network::NetworkError;
     }
 }
 
+/// Print the real TCP connection table mapped to owning processes.
+fn print_network_connections() {
+    match network_connections() {
+        Ok(conns) => {
+            if conns.is_empty() {
+                println!("  (no tcp connections reported)");
+                return;
+            }
+            let listening = conns.iter().filter(|c| c.state == nexus_network::ConnState::Listening).count();
+            let established = conns.iter().filter(|c| c.state == nexus_network::ConnState::Established).count();
+            println!("TCP connections: {} total ({listening} listening, {established} established)", conns.len());
+            println!(" {:>7}  {:<18} {:<5} {:<28} {:<28} {:<12}", "PID", "PROCESS", "PROTO", "LOCAL", "REMOTE", "STATE");
+            for c in conns.iter().take(40) {
+                println!(
+                    " {:>7}  {:<18} {:<5} {:<28} {:<28} {:<12}",
+                    c.pid,
+                    truncate(&c.process, 18),
+                    c.protocol,
+                    c.local,
+                    c.remote.as_deref().unwrap_or("-"),
+                    c.state.as_str()
+                );
+            }
+            if conns.len() > 40 {
+                println!("  … and {} more", conns.len() - 40);
+                println!("  (use `nexus network connections:json` for the full table)");
+            }
+        }
+        Err(e) => println!("  error: {e}"),
+    }
+}
+
+/// One-shot JSON of the connection table mapped to owning processes.
+fn print_network_connections_json() {
+    match network_connections() {
+        Ok(conns) => {
+            println!("[");
+            for (i, c) in conns.iter().enumerate() {
+                let comma = if i + 1 < conns.len() { "," } else { "" };
+                let remote = c.remote.as_deref().unwrap_or("");
+                println!(
+                    "  {{\"pid\":{},\"process\":\"{}\",\"protocol\":\"{}\",\"local\":\"{}\",\
+\"remote\":\"{}\",\"state\":\"{}\"}}{}",
+                    c.pid,
+                    c.process.replace('"', "\\\""),
+                    c.protocol.replace('"', "\\\""),
+                    c.local.replace('"', "\\\""),
+                    remote.replace('"', "\\\""),
+                    c.state.as_str(),
+                    comma
+                );
+            }
+            println!("]");
+        }
+        Err(e) => eprintln!("error: {e}"),
+    }
+}
+
 /// Self-check: run every engine against live data and report pass/fail
 /// honestly. Never claims a subsystem works unless it really did.
 fn doctor() {
@@ -622,6 +682,7 @@ fn doctor() {
         check!("security", Ok::<_, String>(assess_all(&s.processes)));
     }
     check!("network interfaces", network_interfaces());
+    check!("network connections", network_connections());
     let storage = analyze(Path::new(&home_scan_root()));
     if storage.is_some() {
         println!("  [OK]   storage analysis");

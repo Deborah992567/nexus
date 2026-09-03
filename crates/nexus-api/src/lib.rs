@@ -14,7 +14,7 @@ use nexus_ai::{analyze_local, Recommendation, ModelInfo};
 use nexus_audit::{AuditEntry, AuditLog};
 use nexus_core::{HealthReport, ProcessSnapshot, Snapshot};
 use nexus_diagnostics::{analyze as analyze_diag, DiagnosticReport};
-use nexus_network::{bandwidth, network_interfaces, BandwidthSample, NetworkError};
+use nexus_network::{bandwidth, network_connections, network_interfaces, BandwidthSample, NetworkError};
 use nexus_platform::{detect_platform, SystemPlatform};
 use nexus_process::{build_tree, detect_anomalies, sort_by_cpu, Anomaly, ProcessNode};
 use nexus_resource::collect_snapshot;
@@ -92,6 +92,11 @@ impl Nexus {
     /// Measure bandwidth by sampling twice over `window`.
     pub fn bandwidth(&self, window: std::time::Duration) -> Result<Vec<BandwidthSample>, NetworkError> {
         bandwidth(network_interfaces, window)
+    }
+
+    /// Enumerate TCP connections (listening + established) mapped to processes.
+    pub fn connections(&self) -> Result<Vec<nexus_network::NetworkConnection>, NetworkError> {
+        network_connections()
     }
 
     /// Correlated diagnostics for the current snapshot.
